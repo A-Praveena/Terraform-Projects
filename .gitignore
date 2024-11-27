@@ -1,0 +1,27 @@
+# Ignore Terraform directories
+.terraform/
+
+# Ignore Terraform state files
+*.tfstate
+*.tfstate.backup
+
+# Ignore Terraform variable files (should not commit sensitive data)
+terraform.tfvars
+*.auto.tfvars
+
+# Ignore Terraform lock files (optional, only if you don't want to share lock file)
+.terraform.lock.hcl
+
+# Ignore IDE specific files
+.vscode/
+.idea/
+
+# Optional: Ignore node_modules or other build directories if present
+node_modules/
+
+# Ignore sensitive credentials or keys
+*.pem
+*.key
+
+# Ignore local configuration files that could store user-specific or sensitive data
+*.log
