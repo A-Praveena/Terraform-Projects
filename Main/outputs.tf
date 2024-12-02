@@ -22,3 +22,15 @@ output "dynamodb_table_arn" {
 #   value = module.static_website.website_url
 # }
 
+
+## CostUsage and Report Outputs
+output "s3_bucket" {
+  value = aws_s3_bucket.cost_and_usage_report.bucket
+}
+
+output "lambda_function" {
+  value = aws_lambda_function.cost_report_processor.function_name
+}
+
+
+

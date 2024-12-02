@@ -1,0 +1,160 @@
+provider "aws" {
+  region = "us-east-1" # Or another region of your choice
+}
+//In the modules/s3/main.tf, create the S3 bucket where the CUR will be stored:
+resource "aws_s3_bucket" "cost_and_usage_report" {
+  bucket = "my-cost-and-usage-report-bucket"
+  
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    enabled = true
+    prefix = "cur/"
+    expiration {
+      days = 30
+    }
+  }
+
+  # Enable the bucket for public access if necessary
+  acl = "private"
+}
+
+# In the modules/lambda/main.tf, create the Lambda function that will process the CUR data.
+resource "aws_lambda_function" "cost_report_processor" {
+  filename         = "lambda_function_payload.zip" # The path to your Lambda function code
+  function_name    = "process_cost_report"
+  role             = aws_iam_role.lambda_exec.arn
+  handler          = "index.handler"
+  runtime          = "nodejs14.x"
+
+  environment {
+    variables = {
+      S3_BUCKET = aws_s3_bucket.cost_and_usage_report.bucket
+    }
+  }
+
+  # Assuming you've zipped your Lambda function into this file
+  source_code_hash = filebase64sha256("lambda_function_payload.zip")
+}
+
+resource "aws_iam_role" "lambda_exec" {
+  name               = "lambda_exec_role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy_attachment" "lambda_policy_attach" {
+  name       = "lambda_policy_attach"
+  roles      = [aws_iam_role.lambda_exec.name]
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+# Set Up Amazon EventBridge to Trigger Lambda:
+resource "aws_cloudwatch_event_rule" "cost_report_rule" {
+  name        = "cost-report-delivery"
+  description = "Trigger Lambda when a new Cost and Usage Report is delivered"
+
+  event_pattern = jsonencode({
+    source = ["aws.s3"]
+    detail_type = ["AWS API Call via CloudTrail"]
+    detail = {
+      eventSource = ["s3.amazonaws.com"]
+      eventName   = ["PutObject"]
+      requestParameters = {
+        bucketName = aws_s3_bucket.cost_and_usage_report.bucket
+      }
+    }
+  })
+}
+
+resource "aws_cloudwatch_event_target" "cost_report_lambda_target" {
+  rule = aws_cloudwatch_event_rule.cost_report_rule.name
+  arn  = aws_lambda_function.cost_report_processor.arn
+}
+
+resource "aws_lambda_permission" "allow_eventbridge" {
+  statement_id  = "AllowExecutionFromEventBridge"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.cost_report_processor.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.cost_report_rule.arn
+}
+
+# Configure SES for Sending Email Notifications:
+resource "aws_ses_domain_identity" "domain_identity" {
+  domain = "example.com"  # Replace with your domain
+}
+
+resource "aws_ses_email_identity" "email_identity" {
+  email = "no-reply@example.com"  # Replace with your email
+}
+
+resource "aws_ses_template" "cost_email_template" {
+  name = "cost-report-template"
+  html_part = <<HTML
+    <html>
+      <head></head>
+      <body>
+        <h1>AWS Cost Report</h1>
+        <p>Here is your AWS cost report:</p>
+        <p>{{Cost}}</p>
+      </body>
+    </html>
+  HTML
+
+  text_part = <<TEXT
+    AWS Cost Report
+    Here is your AWS cost report: {{Cost}}
+  TEXT
+
+  subject = "AWS Cost Report"
+}
+
+resource "aws_ses_send_email" "send_email" {
+  from    = "no-reply@example.com"
+  to      = ["recipient@example.com"] # Replace with actual recipient
+
+  subject = "AWS Cost Report Notification"
+  body    = jsonencode({
+    Html = {
+      Data = "<h1>Your AWS Cost Report</h1><p>Cost details here.</p>"
+    }
+  })
+
+  configuration_set_name = "MyConfigurationSet"
+}
+
+# Set Up Terraform Main Configuration:
+module "s3" {
+  source = "../modules/s3"
+}
+
+module "lambda" {
+  source = "../modules/lambda"
+}
+
+module "eventbridge" {
+  source = "../modules/eventbridge"
+}
+
+module "ses" {
+  source = "../modules/ses"
+}
+
+# Terraform Variables and Outputs:
+
+# Zip Lambda Function Code:
+Create your Lambda function (e.g., index.js) and zip it to create the lambda_function_payload.zip file. Upload this file to your working directory where Terraform can use it to deploy the Lambda function.
+
+Run teraform commands
